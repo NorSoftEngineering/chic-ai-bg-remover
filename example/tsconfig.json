@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "chic-background-remover": ["../src/index"],
+      "chic-background-remover/*": ["../src/*"]
+    }
+  }
+}

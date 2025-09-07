@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["ChicBackgroundRemoverModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.chicbackgroundremover.ChicBackgroundRemoverModule"]
+  }
+}
