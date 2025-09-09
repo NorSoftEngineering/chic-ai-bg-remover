@@ -1,50 +1,141 @@
 package expo.modules.chicbackgroundremover
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.net.Uri
+import androidx.core.graphics.drawable.toBitmap
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import java.net.URL
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.segmentation.Segmentation
+import com.google.mlkit.vision.segmentation.SegmentationMask
+import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.util.UUID
 
 class ChicBackgroundRemoverModule : Module() {
-  // Each module class must implement the definition function. The definition consists of components
-  // that describes the module's functionality and behavior.
-  // See https://docs.expo.dev/modules/module-api for more details about available components.
   override fun definition() = ModuleDefinition {
-    // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
-    // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
-    // The module will be accessible from `requireNativeModule('ChicBackgroundRemover')` in JavaScript.
     Name("ChicBackgroundRemover")
 
-    // Sets constant properties on the module. Can take a dictionary or a closure that returns a dictionary.
-    Constants(
-      "PI" to Math.PI
-    )
-
-    // Defines event names that the module can send to JavaScript.
-    Events("onChange")
-
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      "Hello world! 👋"
-    }
-
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { value: String ->
-      // Send an event to JavaScript.
-      sendEvent("onChange", mapOf(
-        "value" to value
-      ))
-    }
-
-    // Enables the module to be used as a native view. Definition components that are accepted as part of
-    // the view definition: Prop, Events.
-    View(ChicBackgroundRemoverView::class) {
-      // Defines a setter for the `url` prop.
-      Prop("url") { view: ChicBackgroundRemoverView, url: URL ->
-        view.webView.loadUrl(url.toString())
+    AsyncFunction("removeBackground") { imageUri: String, promise: Promise ->
+      try {
+        processBackgroundRemoval(imageUri, promise)
+      } catch (e: Exception) {
+        promise.reject("BACKGROUND_REMOVAL_ERROR", "Failed to process image: ${e.message}", e)
       }
-      // Defines an event that the view can send to JavaScript.
-      Events("onLoad")
     }
+  }
+
+  private fun processBackgroundRemoval(imageUri: String, promise: Promise) {
+    try {
+      // Load bitmap from URI
+      val inputStream = appContext.reactContext?.contentResolver?.openInputStream(Uri.parse(imageUri))
+      val bitmap = BitmapFactory.decodeStream(inputStream)
+      inputStream?.close()
+
+      if (bitmap == null) {
+        promise.reject("INVALID_IMAGE", "Failed to load image from URI")
+        return
+      }
+
+      // Create MLKit input image
+      val image = InputImage.fromBitmap(bitmap, 0)
+
+      // Configure selfie segmentation options
+      val options = SelfieSegmenterOptions.Builder()
+        .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
+        .build()
+
+      // Create segmenter
+      val segmenter = Segmentation.getClient(options)
+
+      // Process image
+      segmenter.process(image)
+        .addOnSuccessListener { segmentationMask ->
+          try {
+            val processedBitmap = applySegmentationMask(bitmap, segmentationMask)
+            val outputUri = saveBitmapToTempFile(processedBitmap)
+            promise.resolve(outputUri)
+          } catch (e: Exception) {
+            promise.reject("PROCESSING_ERROR", "Failed to apply mask: ${e.message}", e)
+          }
+        }
+        .addOnFailureListener { e ->
+          promise.reject("SEGMENTATION_ERROR", "MLKit segmentation failed: ${e.message}", e)
+        }
+
+    } catch (e: Exception) {
+      promise.reject("BACKGROUND_REMOVAL_ERROR", "Error processing image: ${e.message}", e)
+    }
+  }
+
+  private fun applySegmentationMask(originalBitmap: Bitmap, mask: SegmentationMask): Bitmap {
+    val width = originalBitmap.width
+    val height = originalBitmap.height
+    
+    // Create result bitmap with transparency
+    val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    
+    // Get mask buffer
+    val maskBuffer = mask.buffer
+    val maskArray = ByteArray(maskBuffer.remaining())
+    maskBuffer.get(maskArray)
+    
+    // Apply mask pixel by pixel
+    for (y in 0 until height) {
+      for (x in 0 until width) {
+        val originalPixel = originalBitmap.getPixel(x, y)
+        
+        // Calculate mask index (mask may be different resolution)
+        val maskX = (x * mask.width) / width
+        val maskY = (y * mask.height) / height
+        val maskIndex = maskY * mask.width + maskX
+        
+        if (maskIndex < maskArray.size) {
+          // Convert byte to unsigned int (0-255)
+          val maskValue = maskArray[maskIndex].toInt() and 0xFF
+          
+          // Threshold for foreground detection (adjust as needed)
+          val threshold = 128
+          
+          if (maskValue > threshold) {
+            // Foreground - keep original pixel
+            resultBitmap.setPixel(x, y, originalPixel)
+          } else {
+            // Background - make transparent
+            resultBitmap.setPixel(x, y, Color.TRANSPARENT)
+          }
+        } else {
+          // If mask is out of bounds, make transparent
+          resultBitmap.setPixel(x, y, Color.TRANSPARENT)
+        }
+      }
+    }
+    
+    return resultBitmap
+  }
+
+  private fun saveBitmapToTempFile(bitmap: Bitmap): String {
+    val context = appContext.reactContext ?: throw IOException("React context is null")
+    
+    // Create temp file
+    val tempDir = File(context.cacheDir, "background_removal")
+    if (!tempDir.exists()) {
+      tempDir.mkdirs()
+    }
+    
+    val fileName = "bg_removed_${UUID.randomUUID()}.png"
+    val tempFile = File(tempDir, fileName)
+    
+    // Save bitmap to file
+    FileOutputStream(tempFile).use { outputStream ->
+      bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+    }
+    
+    return "file://${tempFile.absolutePath}"
   }
 }

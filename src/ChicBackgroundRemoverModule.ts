@@ -1,12 +1,13 @@
-import { NativeModule, requireNativeModule } from 'expo';
+import { NativeModule, requireNativeModule } from "expo";
 
-import { ChicBackgroundRemoverModuleEvents } from './ChicBackgroundRemover.types';
+import { ChicBackgroundRemoverModuleEvents } from "./ChicBackgroundRemover.types";
 
 declare class ChicBackgroundRemoverModule extends NativeModule<ChicBackgroundRemoverModuleEvents> {
-  PI: number;
-  hello(): string;
-  setValueAsync(value: string): Promise<void>;
+	isBackgroundRemovalSupported: () => boolean;
+	removeBackground: (imageUri: string) => Promise<string>;
 }
 
 // This call loads the native module object from the JSI.
-export default requireNativeModule<ChicBackgroundRemoverModule>('ChicBackgroundRemover');
+export default requireNativeModule<ChicBackgroundRemoverModule>(
+	"ChicBackgroundRemover",
+);
