@@ -19,7 +19,7 @@ public class ChicBackgroundRemoverModule: Module {
       }
     }
 
-    AsyncFunction("removeBackground") { (imageUri: String, promise: Promise) in
+    AsyncFunction("removeBackground") { (imageUri: String, backgroundColorHex: String?, promise: Promise) in
       // Check if running on simulator
       #if targetEnvironment(simulator)
       promise.reject("SIMULATOR_ERROR", "Background removal is not supported on simulator")
@@ -35,7 +35,7 @@ public class ChicBackgroundRemoverModule: Module {
       // Process image on background queue
       DispatchQueue.global(qos: .userInitiated).async {
         do {
-          let processedImageUri = try self.processBackgroundRemoval(imageUri: imageUri)
+          let processedImageUri = try self.processBackgroundRemoval(imageUri: imageUri, backgroundColorHex: backgroundColorHex)
           DispatchQueue.main.async {
             promise.resolve(processedImageUri)
           }
@@ -49,7 +49,7 @@ public class ChicBackgroundRemoverModule: Module {
   }
   
   @available(iOS 17.0, *)
-  private func processBackgroundRemoval(imageUri: String) throws -> String {
+  private func processBackgroundRemoval(imageUri: String, backgroundColorHex: String?) throws -> String {
     // Load image from URI
     guard let url = URL(string: imageUri),
           let originalImage = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) else {
@@ -62,7 +62,7 @@ public class ChicBackgroundRemoverModule: Module {
     }
     
     // Apply mask to original image
-    let outputImage = applyMask(mask: maskImage, to: originalImage)
+    let outputImage = applyMask(mask: maskImage, to: originalImage, backgroundColorHex: backgroundColorHex)
     
     // Convert to UIImage
     let finalImage = convertToUIImage(ciImage: outputImage)
@@ -101,17 +101,51 @@ public class ChicBackgroundRemoverModule: Module {
   }
   
   @available(iOS 17.0, *)
-  private func applyMask(mask: CIImage, to image: CIImage) -> CIImage {
+  private func applyMask(mask: CIImage, to image: CIImage, backgroundColorHex: String?) -> CIImage {
     guard let filter = CIFilter(name: "CIBlendWithMask") else {
       print("Failed to create CIBlendWithMask filter")
       return image
     }
     
+    // Compose the foreground (subject) over a solid background color to avoid
+    // black/transparent backgrounds in consumers that don't handle alpha.
+    let uiColor = backgroundColorHex.flatMap { colorFromHexString($0) } ?? UIColor.white
+    let backgroundImage = CIImage(color: CIColor(color: uiColor)).cropped(to: image.extent)
+
     filter.setValue(image, forKey: kCIInputImageKey)
     filter.setValue(mask, forKey: kCIInputMaskImageKey)
-    filter.setValue(CIImage.empty(), forKey: kCIInputBackgroundImageKey)
+    filter.setValue(backgroundImage, forKey: kCIInputBackgroundImageKey)
     
-    return filter.outputImage ?? image
+    // Ensure the output is confined to the original image bounds
+    return (filter.outputImage?.cropped(to: image.extent)) ?? image
+  }
+
+  // Parse hex strings like "#RRGGBB" or "#RRGGBBAA" into UIColor
+  private func colorFromHexString(_ hexString: String) -> UIColor? {
+    var hex = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
+    if hex.hasPrefix("#") {
+      hex.removeFirst()
+    }
+
+    guard hex.count == 6 || hex.count == 8 else { return nil }
+
+    var int: UInt64 = 0
+    guard Scanner(string: hex).scanHexInt64(&int) else { return nil }
+
+    let r, g, b, a: CGFloat
+    if hex.count == 6 {
+      r = CGFloat((int & 0xFF0000) >> 16) / 255.0
+      g = CGFloat((int & 0x00FF00) >> 8) / 255.0
+      b = CGFloat(int & 0x0000FF) / 255.0
+      a = 1.0
+    } else {
+      r = CGFloat((int & 0xFF000000) >> 24) / 255.0
+      g = CGFloat((int & 0x00FF0000) >> 16) / 255.0
+      b = CGFloat((int & 0x0000FF00) >> 8) / 255.0
+      a = CGFloat(int & 0x000000FF) / 255.0
+    }
+
+    return UIColor(red: r, green: g, blue: b, alpha: a)
   }
   
   @available(iOS 17.0, *)

@@ -1,5 +1,8 @@
 import ChicBackgroundRemoverModule from "./ChicBackgroundRemoverModule";
-import { BackgroundRemovalResult } from "./ChicBackgroundRemover.types";
+import type {
+	BackgroundRemovalOptions,
+	BackgroundRemovalResult,
+} from "./ChicBackgroundRemover.types";
 
 /**
  * Check if background removal is supported on the current device
@@ -22,7 +25,8 @@ export function isBackgroundRemovalSupported(): boolean {
  */
 export async function removeBackground(
 	imageUri: string,
-	fallbackToOriginal: boolean = false,
+	optionsOrFallback?: BackgroundRemovalOptions | boolean,
+	maybeFallback?: boolean,
 ): Promise<string> {
 	try {
 		if (!imageUri) {
@@ -42,20 +46,31 @@ export async function removeBackground(
 
 		// Check if background removal is supported
 		if (!isBackgroundRemovalSupported()) {
+			const fallbackToOriginal =
+				typeof optionsOrFallback === "boolean"
+					? optionsOrFallback
+					: (maybeFallback ?? false);
 			if (fallbackToOriginal) {
 				console.warn(
 					"Background removal not supported on this device, returning original image",
 				);
 				return imageUri;
-			} else {
-				throw new Error(
-					"Background removal is not supported on this device (requires iOS 17+ on device, not simulator)",
-				);
 			}
+			throw new Error(
+				"Background removal is not supported on this device (requires iOS 17+ on device, not simulator)",
+			);
 		}
 
+		const options: BackgroundRemovalOptions | undefined =
+			typeof optionsOrFallback === "object" && optionsOrFallback !== null
+				? optionsOrFallback
+				: undefined;
+
 		const processedImageUri =
-			await ChicBackgroundRemoverModule.removeBackground(imageUri);
+			await ChicBackgroundRemoverModule.removeBackground(
+				imageUri,
+				options?.backgroundColor,
+			);
 
 		if (!processedImageUri) {
 			throw new Error(
@@ -78,12 +93,14 @@ export async function removeBackground(
  */
 export async function removeBackgroundWithResult(
 	imageUri: string,
-	fallbackToOriginal: boolean = false,
+	optionsOrFallback?: BackgroundRemovalOptions | boolean,
+	maybeFallback?: boolean,
 ): Promise<BackgroundRemovalResult> {
 	try {
 		const processedImageUri = await removeBackground(
 			imageUri,
-			fallbackToOriginal,
+			optionsOrFallback as BackgroundRemovalOptions | boolean | undefined,
+			maybeFallback as boolean | undefined,
 		);
 		const wasProcessed = processedImageUri !== imageUri;
 

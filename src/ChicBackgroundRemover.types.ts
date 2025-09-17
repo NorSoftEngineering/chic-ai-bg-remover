@@ -1,4 +1,4 @@
-export type ChicBackgroundRemoverModuleEvents = {};
+export type ChicBackgroundRemoverModuleEvents = Record<string, never>;
 
 export interface BackgroundRemovalResult {
 	success: boolean;
@@ -10,4 +10,6 @@ export interface BackgroundRemovalResult {
 export interface BackgroundRemovalOptions {
 	quality?: number; // Future enhancement
 	outputFormat?: "png" | "jpg"; // Future enhancement
+	/** Hex color like #FFFFFF or #FFFFFFFF for background compositing */
+	backgroundColor?: string;
 }

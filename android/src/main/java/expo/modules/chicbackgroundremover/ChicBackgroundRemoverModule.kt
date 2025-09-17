@@ -21,16 +21,16 @@ class ChicBackgroundRemoverModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ChicBackgroundRemover")
 
-    AsyncFunction("removeBackground") { imageUri: String, promise: Promise ->
+    AsyncFunction("removeBackground") { imageUri: String, backgroundColorHex: String?, promise: Promise ->
       try {
-        processBackgroundRemoval(imageUri, promise)
+        processBackgroundRemoval(imageUri, backgroundColorHex, promise)
       } catch (e: Exception) {
         promise.reject("BACKGROUND_REMOVAL_ERROR", "Failed to process image: ${e.message}", e)
       }
     }
   }
 
-  private fun processBackgroundRemoval(imageUri: String, promise: Promise) {
+  private fun processBackgroundRemoval(imageUri: String, backgroundColorHex: String?, promise: Promise) {
     try {
       // Load bitmap from URI
       val inputStream = appContext.reactContext?.contentResolver?.openInputStream(Uri.parse(imageUri))
@@ -57,7 +57,8 @@ class ChicBackgroundRemoverModule : Module() {
       segmenter.process(image)
         .addOnSuccessListener { segmentationMask ->
           try {
-            val processedBitmap = applySegmentationMask(bitmap, segmentationMask)
+            val bgColor = parseHexColor(backgroundColorHex) ?: Color.WHITE
+            val processedBitmap = applySegmentationMask(bitmap, segmentationMask, bgColor)
             val outputUri = saveBitmapToTempFile(processedBitmap)
             promise.resolve(outputUri)
           } catch (e: Exception) {
@@ -73,7 +74,7 @@ class ChicBackgroundRemoverModule : Module() {
     }
   }
 
-  private fun applySegmentationMask(originalBitmap: Bitmap, mask: SegmentationMask): Bitmap {
+  private fun applySegmentationMask(originalBitmap: Bitmap, mask: SegmentationMask, backgroundColor: Int): Bitmap {
     val width = originalBitmap.width
     val height = originalBitmap.height
     
@@ -106,17 +107,39 @@ class ChicBackgroundRemoverModule : Module() {
             // Foreground - keep original pixel
             resultBitmap.setPixel(x, y, originalPixel)
           } else {
-            // Background - make transparent
-            resultBitmap.setPixel(x, y, Color.TRANSPARENT)
+            // Background - fill with provided background color
+            resultBitmap.setPixel(x, y, backgroundColor)
           }
         } else {
-          // If mask is out of bounds, make transparent
-          resultBitmap.setPixel(x, y, Color.TRANSPARENT)
+          // If mask is out of bounds, use background color
+          resultBitmap.setPixel(x, y, backgroundColor)
         }
       }
     }
     
     return resultBitmap
+  }
+
+  private fun parseHexColor(hex: String?): Int? {
+    if (hex == null) return null
+    var value = hex.trim()
+    if (value.startsWith("#")) value = value.substring(1)
+    return try {
+      when (value.length) {
+        6 -> {
+          val rgb = value.toLong(16).toInt()
+          // Add full alpha
+          0xFF000000.toInt() or rgb
+        }
+        8 -> {
+          // ARGB
+          value.toLong(16).toInt()
+        }
+        else -> null
+      }
+    } catch (e: Exception) {
+      null
+    }
   }
 
   private fun saveBitmapToTempFile(bitmap: Bitmap): String {
