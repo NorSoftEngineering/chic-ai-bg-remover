@@ -1,6 +1,6 @@
 {
 	"name": "chic-background-remover",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Background Remover",
 	"main": "build/index.js",
 	"types": "build/index.d.ts",
@@ -9,8 +9,8 @@
 		"clean": "expo-module clean",
 		"lint": "expo-module lint",
 		"test": "expo-module test",
-		"prepare": "expo-module prepare",
-		"prepublishOnly": "expo-module prepublishOnly",
+		"prepare": "bunx expo-module prepare",
+		"prepublishOnly": "bunx expo-module prepublishOnly",
 		"expo-module": "expo-module",
 		"open:ios": "xed example/ios",
 		"open:android": "open -a \"Android Studio\" example/android"

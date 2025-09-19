@@ -8,6 +8,7 @@ import androidx.core.graphics.drawable.toBitmap
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.exception.CodedException
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.Segmentation
 import com.google.mlkit.vision.segmentation.SegmentationMask
@@ -38,7 +39,7 @@ class ChicBackgroundRemoverModule : Module() {
       inputStream?.close()
 
       if (bitmap == null) {
-        promise.reject("INVALID_IMAGE", "Failed to load image from URI")
+        promise.reject("INVALID_IMAGE", "Failed to load image from URI", null as Throwable?)
         return
       }
 
